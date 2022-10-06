@@ -1,10 +1,6 @@
-# Network Policies and ACS
+# OpenShift Network Policies
 
-[![Video Walkthrough Thumbnail](././images/network-policy-acs/netpol-video-thumb.png)](https://youtu.be/Md7wrljdP44)
-
-[Video walkthrough](https://youtu.be/Md7wrljdP44)
-
-Without a network policy in place, all pods in a namespace are accessible from other pods and network endpoints. To isolate one or more pods in a namespace, you can create NetworkPolicy objects in that namespace to indicate the allowed incoming connections. Namespace administrators can create and delete NetworkPolicy objects within their own namespaces. A 'deny by default' policy is automatically created and active in all namespaces on the platform. Later in this lab we look at how to build a list of allowed list onto the default of denying network connections. 
+Without a network policy in place, all pods in a namespace are accessible from other pods and network endpoints. To isolate one or more pods in a namespace, you can create NetworkPolicy objects in that namespace to indicate the allowed incoming connections. Namespace administrators can create and delete NetworkPolicy objects within their own namespaces. A 'deny by default' policy is automatically created and active in all namespaces on the platform. 
 
 Network Policies allow you to specify how a pod is allowed to communicate with various network entities.
 
@@ -13,7 +9,7 @@ Entities that a Pod can communicate with are identified through a combination of
 * Namespaces that are allowed
 * IP blocks (exception: traffic to and from the node where a Pod is running is always allowed, regardless of the IP address of the Pod or the node)
 
-When defining a pod or namespace based NetworkPolicy, you use a selector to specify what traffic is allowed to(ingress) and from(egress) the Pod(s) that match the selector. When IP based NetworkPolicies are created, we define policies based on IP blocks (CIDR ranges).
+When defining a pod or namespace based NetworkPolicy, you use a selector to specify what traffic is allowed to(ingress) and from(egress) the Pod(s) that match the selector. When IP based NetworkPolicies are created, you define policies based on IP blocks (CIDR ranges).
 
 By default, a pod is non-isolated for egress and ingress. All outbound & inbound connections are allowed.
 When a pod is isolated for egress or ingress, the only allowed connections from and into the pod are those allowed by the list of some NetworkPolicy that applies to the pod for egress or ingress. The effects of those egress lists combine additively. Network policies do not conflict, they are just additive.
@@ -22,19 +18,9 @@ For a connection from a source pod to a destination pod to be allowed, both the 
 
 By using network policies declarative YAML this code becomes part of your application, ensuring the consistency of “single source of truth” from your codebase.
 
-**Note:** The current BC Gov OpenShift cluster is configured with OpenShift SDN networking which does not support Egress Network Policies. It's good to understand the options but we currently can't lab and test Egress configurations.
-
-## Lab Prep
-
-If you have any network policies in your namespace please delete them. If you are using the web console, you can see networkpolicies under the network tab and delete them (other than the deny by default one called `platform-services-controlled-deny-by-default`). If you are doing this from the cli:
-
-```shell
-# get all the networkpolicies from this namespace
-oc -n [-dev] get networkpolicy
-
-# delete all the other networkpolicies with the name of them
-oc -n [-dev] delete networkpolicy [name]
-```
+**Note:** 
+The primary BC Gov OpenShift clusters are configured with OpenShift SDN networking which does not support Egress Network Policies.  This applies to the following OpenShift Clusters: CLAB, KLAB, SILVER, GOLD, GOLD-DR.  
+KLAB2 and Emerald clusters use a different SDN technology (VMWare NSX-T) which DOES support (and requires) Egress Network Policies.  Details on NSX Networking can be found here: https://cloud.gov.bc.ca/private-cloud/nsx-networking/
 
 ## Network Policy Structure
 
@@ -141,24 +127,11 @@ spec:
 ```
 The deny by default network policy is there to enforce the zero trust networking or walled garden pattern. So we start by denying all then build our allow list.
 
-You should still have your `hello-world-nginx` deployment and pod(s) up and running from a previous lab. If not then fire them up again.
-
-You should also have a service and route pointing to these pods.
-
-Lets get a list of the pods in our namespace. Make sure you've got at least 2 pods running.
-
-```
-oc -n [-dev] get pods -o wide 
-NAME                                 READY   STATUS    AGE     IP              NODE                   
-hello-world-nginx-599d5d8898-2k9n2   1/1     Running   8d      10.97.128.134   mcs-silver-app-32.dmz  
-hello-world-nginx-599d5d8898-6q67s   1/1     Running   8d      10.97.58.168    mcs-silver-app-44.dmz  
-```
-
-Lets test the `deny-by-default` network policy and see if we can curl the http server running in one pod from another pod. Update the command below based on your pod name and pod ip address.
+To test the `deny-by-default` network policy and see if you can curl the http server running in one pod from another pod. Update the command below based on your pod name and pod ip address.
 
 `oc -n [-dev] rsh [pod1 name] curl -v [pod2 ip]:8080`
 
-so:
+what it should look like:
 
 `oc -n [-dev] rsh hello-world-nginx-599d5d8898-2k9n2 curl -v 10.97.58.168:8080`
 
@@ -166,13 +139,13 @@ The curl command should not complete and eventually time out.
 
 You can also try to navigate to the route URL from your browser.
 
-https://route-https-ad204f-dev.apps.silver.devops.gov.bc.ca/
+https://route-https-yourapp-dev.apps.silver.devops.gov.bc.ca/
 
 This should also fail. If it does seem to be working try from a incognito window or clearing your browsers cache.
 
 ## Allow from the same namespace
 
-We've confirmed ingress traffic to our pod and http server is being blocked. Lets now allow traffic from pods in the same namespace.
+Allowing traffic from pods in the same namespace.
 
 To make pods accept connections from other pods in the same namespace, but reject all other connections from pods in other namespaces, add the following NetworkPolicy object:
 
@@ -188,15 +161,13 @@ spec:
     - podSelector: {}
 ```
 
-Lets try our curl command again.
+You can test out connectiving using a curl command :
 
-`oc -n [-dev] rsh hello-world-nginx-599d5d8898-2k9n2 curl -v 10.97.58.168:8080`
+`oc -n [-dev] rsh [pod1 name] curl -v [pod2 ip]:8080`
 
-We should now see "Hello, world..." returning from the curl command.
+You should now recieve a response returning from the curl command.
 
 ## Allow from OpenShift Router
-
-Pod to pod communication is now working but accessing the route is still failing. 
 
 As network traffic from the route flows through the OpenShift router pods to our http pods we'll need to allow traffic from those pods. We can do that with a `namespaceSelector` that matches the namespace the router pods live in.
 
@@ -216,16 +187,14 @@ spec:
   policyTypes:
   - Ingress
 ```
-Lets try to access the route from our browser, it should be working.
-
-* https://route-https-ad204f-dev.apps.silver.devops.gov.bc.ca/
+If you now try to access the route from your browser, it should be working.
 
 
 ## Allow only from specific Pod & Port
 
-If we want to only allow specific traffic to access a pod on a specific port we can do that too!
+If you want to only allow specific traffic to access a pod on a specific port you can do that too!
 
-Lets add this network policy which applies to only specific pods:
+Here is an example of a network policy which applies to only specific pods:
 
 ```yaml
 apiVersion: networking.k8s.io/v1
@@ -248,150 +217,15 @@ spec:
           port: 3306
 ```
 
-Once we have our network policy in place we'll need to set up some more pods to test. Lets scale our existing `hello-world-nginx` deployment down to 1 pod to make things more straight forward. Keep in mind if you have any autoscalers in place.
-
-Create another deployment identical to `hello-world-nginx` that is instead called `hello-world-nginx-2`
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: hello-world-nginx-2
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      deployment: hello-world-nginx-2
-  strategy:
-    rollingUpdate:
-      maxSurge: 25%
-      maxUnavailable: 25%
-    type: RollingUpdate
-  template:
-    metadata:
-      annotations:
-      labels:
-        deployment: hello-world-nginx-2
-    spec:
-      containers:
-      - image: quay.io/redhattraining/hello-world-nginx:v1.0
-        name: hello-world-nginx-2
-        resources:
-          requests:
-            cpu: "10m"
-            memory: 20Mi
-          limits:
-            cpu: "80m"
-            memory: 100Mi
-        ports:
-        - containerPort: 8080
-          protocol: TCP
-
-```
-
-From the developer catalog deploy the `MySQL (Ephemeral)` template. We can use all the default options.
-
-So we should have at least 3 pods running. 1 mysql pod, 1 hello-world-nginx, and 1 hello-world-nginx2 pod.
+Once you have your network policy in place you'll need to set up some more pods to test. You can scale your deployment down to 1 pod to make things more straight forward. Keep in mind if you have any autoscalers in place.
 
 
-Let's do some testing! First lets get our pod list.
+If you would like a more in-depth testing of pod-to-pod or ingress/egress communications, please see the OCP 201 training materials:
+https://github.com/BCDevOps/devops-platform-workshops/blob/master/openshift-201/network-policy.md
 
-```
-oc -n [-dev] get pods -o wide 
-NAME                                   READY   STATUS     AGE   IP             NODE                    
-hello-world-nginx-2-6fd5855c9b-q86jz   1/1     Running    17h   10.97.138.81   mcs-silver-app-29.dmz
-hello-world-nginx-599d5d8898-6q67s     1/1     Running    13d   10.97.58.168   mcs-silver-app-44.dmz 
-mysql-1-w7h95                          1/1     Running    17h   10.97.41.145   mcs-silver-app-11.dmz 
-```
-Lets try to connect from our `hello-world-nginx-2` pod to our mysql pod. Your command should look something similar.
-
-`oc -n [-dev] rsh hello-world-nginx-2-6fd5855c9b-q86jz curl -v telnet://10.97.41.145:3306`
-
-We should get a response with probably some warnings but we should also see a connected response.
-
-`* Connected to 10.97.41.145 (10.97.41.145) port 3306 (#0)`
-
-Great our rule is working! Lets now test from our `hello-world-nginx` pod which should NOT work.
-
-`oc -n [-dev] rsh hello-world-nginx-599d5d8898-6q67s curl -v telnet://10.97.41.145:3306`
-
-Oh strange that seems to be working also. Ah from above we have a `allow-same-namespace` network policy. Remember network policies are additive so having the allow-same-namespace and this network policy in place means they are working together. The allow-same-namespace is letting all traffic between pods. Let's delete the `allow-same-namespace` network policy now and test again.
-
-`oc [-n] rsh hello-world-nginx-599d5d8898-6q67s curl -v telnet://10.97.41.145:3306`
-
-You should see the curl command running but no response is returning. Great! Our network policy is now working.
-
-## ACS Network Graph
-
-Lets now check out Red Hat Advanced Cluster Security (ACS) manager and see how we can visualize network policies!
-
-You should be able to log into ACS by navigating to the URL: https://acs.developer.gov.bc.ca
-
-Once logged in you should be able to click on `Network Graph` on the left navigation bar.
-
-![acs network graph](images/network-policy-acs/acs-network-graph.png) 
-
-You will be scoped to see only your namspaces, so your network graph will not be identical to the image above.
-
-We won't go through all the details for `Network Graph` web interface to get a better understanding please walkthrough the documentation:
-
-* https://docs.openshift.com/acs/3.70/operating/manage-network-policies.html#network-graph-view_manage-network-policies
-
-
-## ACS Simulating Network Policy
-
-ACS allows us to visualize our Network Policy before we apply them. Lets test this out.
-
-First lets save this network policy to a file locally. Make sure to update the namespace section.
-
-```yaml
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-nginx-to-mysql
-  namespace: ad204f-dev **Update to your namespace name**
-spec:
-  podSelector:
-    matchLabels:
-      name: mysql
-  policyTypes:
-    - Ingress
-  ingress:
-    - from:
-        - podSelector:
-            matchLabels:
-              deployment: hello-world-nginx
-      ports:
-        - protocol: TCP
-          port: 3306
-```
-
-From the ACS `Network Graph` view click on `Network Policy Simulator` and click on the upload YAML button.
-
-By hovering over the `hello-world-nginx` deployment in the web UI we should be able to see the added network flow that will apply.
-
-You can close the `Network Policy Simulator` window now. You can apply network policy from ACS but it's best that your network policy YAML are stored with your code and applied via an automated method and not manually. The ACS `Network Policy Simulator` is great to visualize and confirm our network policy is correct before we apply it. 
-
-### Generate network policies
-
-There is also a section of `Network Policy Simulator` that can generate policies for us based on ACS observed network communication flows. There are a couple of points to take note of about this tooling:
-
-* If a deployment already has a network policy, Red Hat Advanced Cluster Security for Kubernetes does not generate new policies or delete existing policies.
-* Generated policies only restrict traffic to existing deployments.
-
-So based on this we probably won't see any generated policy as we will always have at least 1 deny all network policy in place.
-
-## ACS Network flows baseline
-
-ACS will generate a baseline network flow for our deployments this can be viewed from the `Network Graph` section, clicking on a deployment, then `baseline settings`. Again this is handy to visualize but as we have a deny all default network policy in place we shouldn't see too much here that is different that what we set in our network policies. We may see some additional ports here for things like DNS and metrics.
-
-From the `baseline settings` tab you can also click on `simulate baseline as network policy`. This will generate a YAML network policy file with rules for the observed baseline traffic.
-
-Next topic - [Application Logging With Kibana](https://github.com/BCDevOps/devops-platform-workshops/blob/master/openshift-201/logging.md)
 
 ## Links
 
-* Existing documentation and walk through on Network Policy: https://developer.gov.bc.ca/TLDR
 * https://docs.openshift.com/container-platform/4.8/networking/ovn_kubernetes_network_provider/about-ovn-kubernetes.html
 * https://kubernetes.io/docs/concepts/services-networking/network-policies/
 * https://docs.openshift.com/acs/3.70/operating/manage-network-policies.html
